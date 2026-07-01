@@ -54,6 +54,7 @@ app.use('/api/categories', require('./routes/categories'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/page-content', require('./routes/pageContent'));
+app.use('/api/upload', require('./routes/upload'));
 app.use('/api/admin', require('./routes/admin'));
 
 app.use('/api/contact', require('./routes/contact'));
