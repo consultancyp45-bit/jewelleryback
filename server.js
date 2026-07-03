@@ -13,15 +13,27 @@ app.use(express.json());
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // MongoDB Connection
-const providedMongoUri = process.env.MONGODB_URI;
+const providedMongoUri =
+    process.env.MONGODB_URI ||
+    process.env.DATABASE_URL ||
+    process.env.MONGO_URL ||
+    process.env.MONGO_URI;
 const isProduction = process.env.NODE_ENV === 'production';
+const isRender = Boolean(
+    process.env.RENDER ||
+    process.env.RENDER_SERVICE_ID ||
+    process.env.RENDER_INTERNAL_HOSTNAME ||
+    process.env.RENDER_EXTERNAL_HOSTNAME
+);
+const localFallbackUri = 'mongodb://localhost:27017/jewellery';
+const mongoUri = providedMongoUri || (isProduction || isRender ? undefined : localFallbackUri);
 
-if (isProduction && !providedMongoUri) {
-    console.error('ERROR: MONGODB_URI is required in production. Set this in your Render environment variables.');
+if (!mongoUri) {
+    console.error('ERROR: Missing MongoDB connection string.');
+    console.error('Set one of MONGODB_URI, DATABASE_URL, MONGO_URL, or MONGO_URI in your deployment environment.');
     process.exit(1);
 }
 
-const mongoUri = providedMongoUri || 'mongodb://localhost:27017/jewellery';
 const mongooseOptions = {
     useNewUrlParser: true,
     useUnifiedTopology: true,
