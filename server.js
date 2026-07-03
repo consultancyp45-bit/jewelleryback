@@ -14,38 +14,30 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // MongoDB Connection
 const providedMongoUri = process.env.MONGODB_URI;
+const isProduction = process.env.NODE_ENV === 'production';
 
-// If user provides a URI without a database (e.g. mongodb://localhost:27017),
-// default the database name to `jewellery`.
-// If they provide a full URI with a DB, use it as-is.
-const mongoUri = (() => {
-    if (!providedMongoUri) return 'mongodb://localhost:27017/jewellery';
+if (isProduction && !providedMongoUri) {
+    console.error('ERROR: MONGODB_URI is required in production. Set this in your Render environment variables.');
+    process.exit(1);
+}
 
-    // Very small heuristic: if there's no trailing "/<db>" part, append it.
-    // Examples:
-    // - mongodb://localhost:27017 -> mongodb://localhost:27017/jewellery
-    // - mongodb://localhost:27017/otherdb -> mongodb://localhost:27017/otherdb
-    if (providedMongoUri.endsWith('/')) return `${providedMongoUri}jewellery`;
-    const lastSegment = providedMongoUri.split('/').pop();
-    // If last segment contains query params or is empty, don't append blindly.
-    if (!lastSegment || lastSegment.includes('?')) return `${providedMongoUri}/jewellery`;
-
-    // If the last segment looks like a database name (no '='), keep it.
-    // If it's clearly host/port end (e.g. mongodb://localhost:27017), append.
-    const looksLikeDbName = lastSegment && !lastSegment.includes(':') && !lastSegment.includes('.') && !lastSegment.includes(' ');
-    // For mongodb://localhost:27017, lastSegment is '27017' (contains ':'? no). We special-case this common port-only form.
-    const isPortOnly = lastSegment && /^\d+$/.test(lastSegment);
-
-    if (isPortOnly || !looksLikeDbName) return `${providedMongoUri}/jewellery`;
-    return providedMongoUri;
-})();
-
-mongoose.connect(mongoUri, {
+const mongoUri = providedMongoUri || 'mongodb://localhost:27017/jewellery';
+const mongooseOptions = {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-})
+    serverSelectionTimeoutMS: 10000,
+};
+
+mongoose.connect(mongoUri, mongooseOptions)
     .then(() => console.log('MongoDB connected'))
-    .catch(err => console.log('MongoDB connection error:', err));
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+        process.exit(1);
+    });
+
+mongoose.connection.on('error', err => {
+    console.error('MongoDB connection lost:', err);
+});
 
 
 // Routes
@@ -62,6 +54,28 @@ app.use('/api/contact', require('./routes/contact'));
 // Basic route
 app.get('/', (req, res) => {
     res.json({ message: 'Welcome to Jewellery Store API' });
+});
+
+// Health check endpoint to assist in deployment debugging
+app.get('/health', async (req, res) => {
+    try {
+        const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+        const state = mongoose.connection.readyState;
+        const info = {
+            mongoState: states[state] || state,
+            env: process.env.NODE_ENV || 'development',
+        };
+
+        // Try a lightweight DB command when connected
+        if (state === 1) {
+            const collections = await mongoose.connection.db.listCollections().toArray();
+            info.collections = collections.map(c => c.name).slice(0, 10);
+        }
+
+        res.json(info);
+    } catch (err) {
+        res.status(500).json({ message: 'Health check failed', error: err.message });
+    }
 });
 
 // Error handling middleware
