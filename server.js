@@ -13,11 +13,14 @@ app.use(express.json());
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // MongoDB Connection
-const providedMongoUri =
-    process.env.MONGODB_URI ||
-    process.env.DATABASE_URL ||
-    process.env.MONGO_URL ||
-    process.env.MONGO_URI;
+const mongoEnvSources = [
+    { name: 'MONGODB_URI', value: process.env.MONGODB_URI },
+    { name: 'DATABASE_URL', value: process.env.DATABASE_URL },
+    { name: 'MONGO_URL', value: process.env.MONGO_URL },
+    { name: 'MONGO_URI', value: process.env.MONGO_URI },
+];
+const providedMongoEnv = mongoEnvSources.find((source) => Boolean(source.value));
+const providedMongoUri = providedMongoEnv?.value;
 const isProduction = process.env.NODE_ENV === 'production';
 const isRender = Boolean(
     process.env.RENDER ||
@@ -33,6 +36,8 @@ if (!mongoUri) {
     console.error('Set one of MONGODB_URI, DATABASE_URL, MONGO_URL, or MONGO_URI in your deployment environment.');
     process.exit(1);
 }
+
+console.log(`Connecting to MongoDB using ${providedMongoEnv?.name || 'local fallback'}`);
 
 const mongooseOptions = {
     useNewUrlParser: true,
