@@ -30,13 +30,16 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const payload = req.body && typeof req.body === 'object' ? req.body : {};
+        const email = payload.email ?? payload.username ?? payload.user?.email ?? payload.credentials?.email;
+        const password = payload.password ?? payload.credentials?.password;
 
         if (!email || !password) {
             return res.status(400).json({ message: 'Email and password are required' });
         }
 
-        const user = await User.findOne({ email });
+        const normalizedEmail = String(email).trim().toLowerCase();
+        const user = await User.findOne({ email: normalizedEmail });
         if (!user) return res.status(400).json({ message: 'User not found' });
 
         if (!user.password) {

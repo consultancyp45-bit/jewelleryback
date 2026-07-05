@@ -5,10 +5,69 @@ const { exec } = require('child_process');
 const os = require('os');
 require('dotenv').config();
 
+const User = require('./models/User');
+
 const app = express();
 
+// CORS configuration
+const defaultAllowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+    'https://jewelleryback.onrender.com',
+];
+const configuredAllowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+const allowedOrigins = [...new Set([...defaultAllowedOrigins, ...configuredAllowedOrigins])];
+
+const isOriginAllowed = (origin) => {
+    if (!origin) return true;
+    if (allowedOrigins.includes(origin)) return true;
+
+    try {
+        const hostname = new URL(origin).hostname;
+        return /(?:^|\.)vercel\.app$/i.test(hostname)
+            || /(?:^|\.)vercel\.dev$/i.test(hostname)
+            || /(?:^|\.)onrender\.com$/i.test(hostname);
+    } catch {
+        return false;
+    }
+};
+
+const corsOptions = {
+    origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+    credentials: true,
+    optionsSuccessStatus: 204,
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+app.use((req, res, next) => {
+    const requestOrigin = req.headers.origin;
+    if (requestOrigin && isOriginAllowed(requestOrigin)) {
+        res.header('Access-Control-Allow-Origin', requestOrigin);
+    } else {
+        res.header('Access-Control-Allow-Origin', '*');
+    }
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+    next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -45,8 +104,39 @@ const mongooseOptions = {
     serverSelectionTimeoutMS: 10000,
 };
 
+const seedDefaultAdmin = async () => {
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@jewellery.com').toLowerCase();
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456';
+
+    try {
+        let adminUser = await User.findOne({ email: adminEmail });
+
+        if (!adminUser) {
+            adminUser = new User({
+                name: 'Admin',
+                email: adminEmail,
+                password: adminPassword,
+                role: 'admin',
+            });
+            await adminUser.save();
+            console.log(`Default admin user created: ${adminEmail}`);
+        } else if (adminUser.role !== 'admin') {
+            adminUser.role = 'admin';
+            await adminUser.save();
+            console.log(`Existing user promoted to admin: ${adminEmail}`);
+        } else {
+            console.log(`Admin user ready: ${adminEmail}`);
+        }
+    } catch (err) {
+        console.error('Failed to seed default admin user:', err.message);
+    }
+};
+
 mongoose.connect(mongoUri, mongooseOptions)
-    .then(() => console.log('MongoDB connected'))
+    .then(async () => {
+        console.log('MongoDB connected');
+        await seedDefaultAdmin();
+    })
     .catch(err => {
         console.error('MongoDB connection error:', err);
         process.exit(1);
